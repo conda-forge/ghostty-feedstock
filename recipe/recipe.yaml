@@ -11,7 +11,7 @@ source:
   sha256: 3349d25600ffbda281197a18314f7d18791969cffe9474f0ff16a45a9ebfccdb
 
 build:
-  number: 0
+  number: 1
   # Build only on linux-64 for now.
   #   - macOS: Xcode 16.4 is on the Azure osx_64 runner (probe confirms),
   #     and zig is invoked successfully via xcodebuild, but the build
