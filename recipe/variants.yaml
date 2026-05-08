@@ -1,0 +1,20 @@
+# Linux pin overrides for ghostty.
+#
+# Using rattler-build's v1 conditional syntax (`if: linux / then: ...`) so
+# the conda-forge linter sees that nothing is being set against the macOS
+# baseline (osx is skipped in recipe.yaml anyway).
+
+# zig 0.15.2 build 22 ships stdlib patches that *would* let us drop to
+# glibc 2.17 — but conda-forge's gtk4 / libadwaita / gtk4-layer-shell
+# build against glibc 2.34 (their run_exports pin __glibc >=2.34), so
+# our binary's runtime floor is 2.34 regardless. Match the sysroot to
+# the chokepoint.
+c_stdlib_version:
+  - if: linux
+    then: 2.34
+
+# Current gtk4 / libadwaita / harfbuzz builds in conda-forge need
+# libxml2-16 >= 2.15.x; the global pinning is still 2.14 (transition lag).
+libxml2:
+  - if: linux
+    then: 2.15
