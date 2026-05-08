@@ -1,10 +1,126 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Fetch zig dependencies into an offline cache. This step requires network.
+# Fetch zig dependencies into an offline cache. This step requires network and
+# is shared by both branches — Ghostty's macOS Xcode project also shells out
+# to zig for the core terminal libs.
 export ZIG_GLOBAL_CACHE_DIR="${SRC_DIR}/zig-cache"
 mkdir -p "${ZIG_GLOBAL_CACHE_DIR}"
 ./nix/build-support/fetch-zig-cache.sh
+
+if [[ "${target_platform}" == osx-* ]]; then
+    # ---------------- macOS branch ----------------
+    # Per upstream's https://ghostty.org/docs/install/build, `zig build
+    # -Doptimize=ReleaseFast` (no -Demit-macos-app=false) drives the whole
+    # .app build — it produces the libghostty xcframework AND invokes
+    # xcodebuild against it under the "ReleaseLocal" configuration, which
+    # specifically disables Library Validation so the resulting bundle
+    # works with ad-hoc signing (no Developer ID required). That's
+    # exactly our situation, so we follow the documented recipe instead
+    # of orchestrating xcframework + xcodebuild ourselves.
+
+    # Ghostty 1.3.1's macOS sources reference Tahoe-era SDK symbols
+    # (NSGlassEffectView, ConcentricRectangle, etc.) that aren't in
+    # MacOSX15.5.sdk shipped with Xcode 16.4 — Backport.swift gates the
+    # *uses* with @available, but the *symbols* still need to exist at
+    # compile time, so we need an Xcode 26 SDK on the path. The Azure
+    # macOS image ships multiple Xcodes; pick the highest 26.* if present.
+    # Deployment target stays at 13.0 (set in the project), matching
+    # upstream's published macOS 13 Ventura support floor.
+    echo "==> Available Xcodes (and their SDKs):"
+    for xc in /Applications/Xcode*.app; do
+        [[ -e "$xc" ]] || continue
+        xcb="$xc/Contents/Developer/usr/bin/xcodebuild"
+        if [[ -x "$xcb" ]]; then
+            ver=$("$xcb" -version 2>/dev/null | tr '\n' ' ')
+            sdks=$("$xcb" -showsdks 2>/dev/null | grep -E 'macOS|macosx' | head -3 | tr '\n' ',' || true)
+            echo "  $xc  ::  $ver  ::  SDKs: $sdks"
+        else
+            echo "  $xc  ::  (no xcodebuild)"
+        fi
+    done
+
+    XCODE26="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)"
+    if [[ -n "${XCODE26}" && -d "${XCODE26}/Contents/Developer" ]]; then
+        export DEVELOPER_DIR="${XCODE26}/Contents/Developer"
+        echo "==> Selecting ${DEVELOPER_DIR} for xcodebuild (Tahoe SDK)"
+    else
+        echo "==> ERROR: no Xcode 26 found on the runner; build will fail with"
+        echo "    'cannot find type NSGlassEffectView in scope' against older SDKs."
+        exit 1
+    fi
+
+    BUILD_DIR="${SRC_DIR}/build-macos"
+    mkdir -p "${BUILD_DIR}"
+
+    # Two-step build (instead of upstream's bundled `zig build` →
+    # `xcodebuild -configuration ReleaseLocal`):
+    #   1. zig build the xcframework (libghostty core for arm64-only).
+    #   2. xcodebuild -configuration Release -scheme Ghostty for the .app.
+    # We tried the bundled path; xcodebuild's ReleaseLocal config tripped
+    # a Swift compile error in the Ghostty target that the Release config
+    # doesn't (specific error text was truncated by cf-job-logs annotations).
+    # Release + ad-hoc signing produces a working bundle, so we stick with
+    # the more explicit flow.
+
+    # Step 1: produce macos/GhosttyKit.xcframework. -Dxcframework-target=native
+    # limits to the arm64 slice, skipping universal/iOS slices we don't need.
+    # Without this the x86_64-macos slice triggers a zig codegen panic.
+    zig build \
+        --system "${ZIG_GLOBAL_CACHE_DIR}/p" \
+        -Doptimize=ReleaseFast \
+        -Demit-macos-app=false \
+        -Dxcframework-target=native \
+        -Dversion-string="${PKG_VERSION}-conda"
+
+    # Step 2: xcodebuild against the xcframework produced above.
+    # ARCHS=arm64 + ONLY_ACTIVE_ARCH=YES restricts to the arm64 slice.
+    xcodebuild \
+        -project macos/Ghostty.xcodeproj \
+        -scheme Ghostty \
+        -configuration Release \
+        -destination "generic/platform=macOS" \
+        -derivedDataPath "${BUILD_DIR}/DerivedData" \
+        ARCHS=arm64 \
+        ONLY_ACTIVE_ARCH=YES \
+        SYMROOT="${BUILD_DIR}" \
+        CODE_SIGN_IDENTITY=- \
+        CODE_SIGN_STYLE=Manual \
+        CODE_SIGNING_REQUIRED=YES \
+        CODE_SIGNING_ALLOWED=YES \
+        OTHER_CODE_SIGN_FLAGS="--timestamp=none" \
+        MARKETING_VERSION="${PKG_VERSION}" \
+        build
+
+    APP_SRC="${BUILD_DIR}/Release/Ghostty.app"
+
+    # Re-sign --deep --force so embedded helpers/frameworks inherit a
+    # consistent ad-hoc signature. xcodebuild signs the outer bundle but
+    # can leave deeper Mach-Os (Sparkle.framework's helpers) untouched.
+    /usr/bin/codesign --force --deep --sign - "${APP_SRC}"
+    /usr/bin/codesign --verify --deep --strict "${APP_SRC}"
+
+    # Layout:
+    #   $PREFIX/Applications/Ghostty.app  — full bundle for `open` / GUI
+    #   $PREFIX/bin/ghostty               — shim into the dual-mode binary
+    # The same Mach-O handles `+help` / `--version` (CLI mode) and GUI.
+    mkdir -p "${PREFIX}/Applications" "${PREFIX}/bin"
+    cp -R "${APP_SRC}" "${PREFIX}/Applications/Ghostty.app"
+
+    cat > "${PREFIX}/bin/ghostty" <<'SHIM'
+#!/usr/bin/env bash
+exec "$(dirname "$0")/../Applications/Ghostty.app/Contents/MacOS/ghostty" "$@"
+SHIM
+    chmod +x "${PREFIX}/bin/ghostty"
+
+    mkdir -p "${PREFIX}/Menu"
+    cp "${RECIPE_DIR}/Menu/ghostty.json" "${PREFIX}/Menu/ghostty.json"
+    # Icon ships inside Ghostty.app; menuinst points at it via CFBundleIconFile.
+
+    exit 0
+fi
+
+# ---------------- Linux branch ----------------
 
 # Generate a libc.txt that points zig at the conda toolchain instead of the
 # system /lib64 / /usr/include. zig build doesn't go through the conda zig-cc

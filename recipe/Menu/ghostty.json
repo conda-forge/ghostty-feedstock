@@ -6,18 +6,30 @@
             "name": "Ghostty",
             "description": "A fast, native, feature-rich terminal emulator",
             "command": [
-                "{{ PREFIX }}/bin/ghostty",
-                "--gtk-single-instance=true"
+                "{{ PREFIX }}/bin/ghostty"
             ],
             "icon": "{{ MENU_DIR }}/ghostty.{{ ICON_EXT }}",
             "platforms": {
                 "linux": {
+                    "command": [
+                        "{{ PREFIX }}/bin/ghostty",
+                        "--gtk-single-instance=true"
+                    ],
                     "Categories": [
                         "System",
                         "TerminalEmulator"
                     ],
                     "StartupNotify": true,
                     "DBusActivatable": false
+                },
+                "osx": {
+                    "command": [
+                        "{{ PREFIX }}/Applications/Ghostty.app/Contents/MacOS/ghostty"
+                    ],
+                    "CFBundleName": "Ghostty",
+                    "CFBundleDisplayName": "Ghostty",
+                    "CFBundleIdentifier": "com.mitchellh.ghostty.menuinst",
+                    "CFBundleVersion": "{{ PKG_VERSION }}"
                 }
             }
         }
