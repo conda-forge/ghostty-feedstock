@@ -1,0 +1,8 @@
+--- a/macos/Sources/Features/Custom App Icon/DockTilePlugin.swift	2026-01-01 00:00:00 +0000
++++ b/macos/Sources/Features/Custom App Icon/DockTilePlugin.swift	2026-01-01 00:00:00 +0000
+@@ -128,4 +128,4 @@
+ private extension NSDockTile {
+-    func setIcon(_ newIcon: NSImage) {
++    func setIcon(_ newIcon: sending NSImage) {
+         // Update the Dock tile on the main thread.
+         DispatchQueue.main.async {

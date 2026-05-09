@@ -12,9 +12,21 @@
 c_stdlib_version:
   - if: linux
     then: 2.34
+  # Match upstream Ghostty's published floor (macOS 13+ Ventura) for
+  # the official binary distribution. We compile with Xcode 26 because
+  # the sources reference macOS 26 SDK symbols (NSGlassEffectView,
+  # ConcentricRectangle, .icon format), but those references live
+  # inside `if #available(macOS 26, *)` gates and the deployment
+  # target stays at 13.0 — matching the xcodebuild log's
+  # `-target arm64-apple-macos13.0`. conda-forge's global osx default
+  # is 11.0; bumping to 13.0 mirrors what users get from the upstream
+  # download.
+  - if: osx
+    then: "13.0"
 
 # Current gtk4 / libadwaita / harfbuzz builds in conda-forge need
 # libxml2-16 >= 2.15.x; the global pinning is still 2.14 (transition lag).
 libxml2:
   - if: linux
     then: 2.15
+

@@ -9,33 +9,66 @@ package:
 source:
   url: https://release.files.ghostty.org/${{ version }}/ghostty-${{ version }}.tar.gz
   sha256: 3349d25600ffbda281197a18314f7d18791969cffe9474f0ff16a45a9ebfccdb
+  patches:
+    # Mark NSDockTile.setIcon's parameter as `sending` so Xcode 16.4's
+    # Swift 6 compiler accepts the cross-actor transfer to DispatchQueue.main.
+    # Xcode 26 (what upstream targets) infers this; 16.4 doesn't.
+    - patches/dock-tile-plugin-sending.patch
+    # Drop the new Xcode-26 .icon directory ("Liquid Glass" icon format)
+    # from the project. Compiling it requires the AssetCatalogAgent helper
+    # daemon, which crashes on the headless conda-forge macOS runner with
+    # IBPlatformToolFailureException ("The tool closed the connection").
+    # Without the .icon ref, actool falls back to the legacy AppIcon set
+    # in Assets.xcassets — flat icon, no Liquid Glass effect on macOS 26,
+    # but the build completes cleanly.
+    # TODO: ship a pre-compiled Assets.car (built locally with full GUI)
+    # alongside the recipe so we can keep the Liquid Glass icon.
+    - patches/drop-iconcomposer-icon.patch
 
 build:
   number: 0
-  # Build only on linux-64 for now.
-  #   - macOS: Xcode 16.4 is on the Azure osx_64 runner (probe confirms),
-  #     and zig is invoked successfully via xcodebuild, but the build
-  #     panics with "reached unreachable code" inside zig itself when
-  #     compiling for x86_64-macos.13.0 against MacOSX15.5.sdk. Root
-  #     cause not yet pinned down — could be a zig 0.15.2 codegen bug,
-  #     or the conda-forge x86_64 zig running under Rosetta on an Apple
-  #     Silicon runner (the runner-arch question is unresolved). Path
-  #     forward: enable osx_arm64 once the recipe lands in a feedstock
-  #     (via `provider.osx_arm64: default` or
-  #     `build_platform.osx_64: osx_arm64` in conda-forge.yml) so zig
-  #     runs on its native arch and we can debug from a clean baseline.
+  dynamic_linking:
+    # On osx we ship a self-contained .app bundle with Sparkle.framework
+    # inside Contents/Frameworks/. xcodebuild emits the standard
+    # @rpath = @executable_path/../Frameworks for that case. Without
+    # this opt-out, rattler-build's binary relocator rewrites the
+    # rpath to @executable_path/../../../../lib (conda's standard
+    # lib/), which breaks Sparkle loading at launch:
+    #   dyld: Library not loaded: @rpath/Sparkle.framework/...
+    #         tried: $PREFIX/lib/Sparkle.framework/... (no such file)
+    # We express this as a conditional allowlist instead of `false`:
+    #   - linux: ["**"]  → relocate everything (default behaviour)
+    #   - osx:   []      → relocate nothing
+    # If a future maintainer adds a conda host dep on macOS the
+    # resulting binary won't have its rpath rewritten and the test
+    # will fail with "image not found" — which is the right signal
+    # to come back and tighten this list.
+    binary_relocation:
+      - if: linux
+        then: "**"
+  # Platform support, current state:
+  #   - linux-64: built via zig (see build.sh, linux branch).
+  #   - osx-arm64: built via xcodebuild + ad-hoc codesigning against
+  #     macos/Ghostty.xcodeproj (see build.sh, osx branch). Going native-arm
+  #     first because earlier osx-64 attempts panicked inside zig
+  #     ("reached unreachable code" compiling x86_64-macos.13.0 against
+  #     MacOSX15.5.sdk) — we suspected the conda-forge x86_64 zig running
+  #     under Rosetta on an Apple Silicon runner.
+  #   - osx-64: temporarily skipped. With build_platform.osx_64=osx_arm64
+  #     in conda-forge.yml the osx_64 build would cross-compile from arm64,
+  #     but we want osx-arm64 green first before opening up the cross-build.
+  #   - linux-aarch64: skipped — gtk4-layer-shell isn't packaged for it yet.
   #   - Windows: unsupported upstream.
-  #   - linux-aarch64: gtk4-layer-shell isn't packaged for it yet.
   skip:
-    - not (linux and x86_64)
+    - win
+    - linux and aarch64
+    - linux and ppc64le
+    - osx and x86_64
   script:
     file: build
 
 requirements:
   build:
-    - ${{ compiler('c') }}
-    - ${{ compiler('cxx') }}
-    - ${{ stdlib('c') }}
     # Pin to zig 0.15.2 build 22+ for the stdlib patches that bypass
     # missing libc symbols (fstat/getrandom/copy_file_range) and remap
     # absolute paths in linker scripts under a sysroot. We still need
@@ -43,48 +76,67 @@ requirements:
     # in those patches only fires when zig is invoked with an explicit
     # `-target x86_64-linux-gnu.2.17` and ghostty's build.zig launches
     # sub-compiles with `native-native` target.
+    # zig is also invoked from the Xcode project's run-script build
+    # phases on macOS, so it's a build dep on both platforms.
     - 'zig 0.15.2.* [build_number=">=22"]'
-    - pkg-config
+    # pandoc is invoked by ghostty's zig build to generate manpages and
+    # HTML docs on every platform — without it: "error: failed to spawn
+    # and capture stdio from pandoc: FileNotFound".
     - pandoc
-    - gettext
-    - libxml2
-    - gobject-introspection
-    - wayland-protocols
+    - if: linux
+      then:
+        - ${{ compiler('c') }}
+        - ${{ compiler('cxx') }}
+        - ${{ stdlib('c') }}
+        - pkg-config
+        - gettext
+        - libxml2
+        - gobject-introspection
+        - wayland-protocols
+    # macOS: xcodebuild is system-provided on the conda-forge osx_arm64
+    # runner. Additional macOS-only build deps to be discovered via CI.
   host:
-    # GTK / GUI
-    - gtk4
-    - libadwaita
-    - gtk4-layer-shell
-    - libxkbcommon
-    - wayland
-    - xorg-libx11
-    - xorg-libxcursor
-    - xorg-libxi
-    - xorg-libxrandr
-    - libgl-devel
-    - gst-plugins-base
-    - gst-plugins-good
-    - gstreamer
-    # System libraries linked dynamically by zig build's
-    # systemIntegrationOption defaults on Linux.
-    - bzip2
-    - expat
-    - fontconfig
-    - freetype
-    - harfbuzz
-    - libpng
-    - libxml2
-    - oniguruma
-    - zlib
+    - if: linux
+      then:
+        # GTK / GUI
+        - gtk4
+        - libadwaita
+        - gtk4-layer-shell
+        - libxkbcommon
+        - wayland
+        - xorg-libx11
+        - xorg-libxcursor
+        - xorg-libxi
+        - xorg-libxrandr
+        - libgl-devel
+        - gst-plugins-base
+        - gst-plugins-good
+        - gstreamer
+        # System libraries linked dynamically by zig build's
+        # systemIntegrationOption defaults on Linux.
+        - bzip2
+        - expat
+        - fontconfig
+        - freetype
+        - harfbuzz
+        - libpng
+        - libxml2
+        - oniguruma
+        - zlib
+    # macOS host deps live inside the .app bundle (Sparkle, Swift libs)
+    # or come from the system SDK. Start empty; tighten once CI is green.
   run:
-    # gtk4-layer-shell doesn't export a run-export, so the .so.0 needs to
-    # be listed explicitly (otherwise: "ghostty: error while loading shared
-    # libraries: libgtk4-layer-shell.so.0").
-    - gtk4-layer-shell
-    # GStreamer is dlopened at runtime for video/audio integrations.
-    - gst-plugins-base
-    - gst-plugins-good
-    - gstreamer
+    - if: linux
+      then:
+        # gtk4-layer-shell doesn't export a run-export, so the .so.0 needs to
+        # be listed explicitly (otherwise: "ghostty: error while loading shared
+        # libraries: libgtk4-layer-shell.so.0").
+        - gtk4-layer-shell
+        # GStreamer is dlopened at runtime for video/audio integrations.
+        - gst-plugins-base
+        - gst-plugins-good
+        - gstreamer
+    # macOS run deps: bundled inside Ghostty.app — none required from conda.
 
 tests:
   - script:
@@ -94,13 +146,26 @@ tests:
       bin:
         - ghostty
       files:
-        - share/applications/com.mitchellh.ghostty.desktop
-        # ghostty installs its terminfo as the canonical xterm-ghostty entry
-        # (with a relative symlink ghostty -> xterm-ghostty that conda strips
-        # and we recreate in build.sh).
-        - share/terminfo/78/xterm-ghostty
-        - share/terminfo/x/xterm-ghostty
         - Menu/ghostty.json
+        - if: linux
+          then:
+            - share/applications/com.mitchellh.ghostty.desktop
+            # ghostty installs its terminfo as the canonical xterm-ghostty entry
+            # (with a relative symlink ghostty -> xterm-ghostty that conda strips
+            # and we recreate in build.sh).
+            - share/terminfo/78/xterm-ghostty
+            - share/terminfo/x/xterm-ghostty
+        - if: osx
+          then:
+            - Applications/Ghostty.app/Contents/MacOS/ghostty
+            - Applications/Ghostty.app/Contents/Info.plist
+            # Assets.car is the compiled asset catalog (icons, etc.). On
+            # earlier runs xcodebuild's ibtoold sub-tool crashed during
+            # CompileAssetCatalogVariant — printed "BUILD FAILED" but the
+            # overall build still appeared to succeed. Listing it here so
+            # if it's ever missing the package_contents test catches it
+            # instead of silently shipping an iconless bundle.
+            - Applications/Ghostty.app/Contents/Resources/Assets.car
 
 about:
   homepage: https://ghostty.org
