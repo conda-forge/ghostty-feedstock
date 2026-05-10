@@ -53,6 +53,40 @@ if [[ "${target_platform}" == osx-* ]]; then
     BUILD_DIR="${SRC_DIR}/build-macos"
     mkdir -p "${BUILD_DIR}"
 
+    # Synthesize a legacy AppIcon set so the .app actually has an icon.
+    # Ghostty 1.3.1 ships its app icon ONLY as the new Xcode-26 .icon
+    # directory (images/Ghostty.icon) — there is no .appiconset in
+    # Assets.xcassets. We drop the .icon (the actool AssetCatalogAgent
+    # daemon crashes on the headless runner), so without this the
+    # resulting bundle has no app icon and shows the generic Mac icon in
+    # the Dock / ⌘-Tab switcher. Build a classic Ghostty.appiconset by
+    # downscaling the bundled macOS-AppIcon-1024px.png with `sips`; the
+    # project's ASSETCATALOG_COMPILER_APPICON_NAME is already "Ghostty",
+    # so actool picks it up. Flat icon, no Liquid Glass tinting, but a
+    # real Ghostty icon. (TODO: pre-compile the .icon's Assets.car on a
+    # GUI Mac and ship it to restore the Tahoe icon.)
+    icon_src="macos/Assets.xcassets/AppIconImage.imageset/macOS-AppIcon-1024px.png"
+    icon_set="macos/Assets.xcassets/Ghostty.appiconset"
+    mkdir -p "${icon_set}"
+    icon_json='{
+  "images" : ['
+    icon_sep=''
+    for slot in "16:1x:16" "16:2x:32" "32:1x:32" "32:2x:64" \
+                "128:1x:128" "128:2x:256" "256:1x:256" "256:2x:512" \
+                "512:1x:512" "512:2x:1024"; do
+        IFS=: read -r pt sc px <<< "${slot}"
+        out="icon_${pt}pt_${sc}.png"
+        sips -s format png -z "${px}" "${px}" "${icon_src}" --out "${icon_set}/${out}" >/dev/null
+        icon_json="${icon_json}${icon_sep}
+    { \"filename\" : \"${out}\", \"idiom\" : \"mac\", \"scale\" : \"${sc}\", \"size\" : \"${pt}x${pt}\" }"
+        icon_sep=','
+    done
+    icon_json="${icon_json}
+  ],
+  \"info\" : { \"author\" : \"ghostty-feedstock\", \"version\" : 1 }
+}"
+    printf '%s\n' "${icon_json}" > "${icon_set}/Contents.json"
+
     # Two-step build (instead of upstream's bundled `zig build` →
     # `xcodebuild -configuration ReleaseLocal`):
     #   1. zig build the xcframework (libghostty core for arm64-only).
