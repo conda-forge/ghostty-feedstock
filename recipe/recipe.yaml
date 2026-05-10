@@ -49,21 +49,23 @@ build:
   # Platform support, current state:
   #   - linux-64: built via zig (see build.sh, linux branch).
   #   - osx-arm64: built via xcodebuild + ad-hoc codesigning against
-  #     macos/Ghostty.xcodeproj (see build.sh, osx branch). Going native-arm
-  #     first because earlier osx-64 attempts panicked inside zig
-  #     ("reached unreachable code" compiling x86_64-macos.13.0 against
-  #     MacOSX15.5.sdk) — we suspected the conda-forge x86_64 zig running
-  #     under Rosetta on an Apple Silicon runner.
-  #   - osx-64: temporarily skipped. With build_platform.osx_64=osx_arm64
-  #     in conda-forge.yml the osx_64 build would cross-compile from arm64,
-  #     but we want osx-arm64 green first before opening up the cross-build.
+  #     macos/Ghostty.xcodeproj (see build.sh, osx branch).
+  #   - osx-64: cross-compiled from osx_arm64 (build_platform.osx_64=osx_arm64
+  #     in conda-forge.yml). Experimental: earlier osx-64 attempts panicked
+  #     inside zig ("reached unreachable code" compiling x86_64-macos.13.0
+  #     against MacOSX15.5.sdk) — but that was the conda-forge x86_64 zig
+  #     running under Rosetta. Now we use the native arm64 zig
+  #     cross-compiling, against the Xcode 26 SDK, so the panic may not
+  #     recur. zig's xcframework "native" target is the zig-host arch
+  #     regardless of -Dtarget, so for osx-64 we build the *universal*
+  #     xcframework (which includes the x86_64-macos slice) and let
+  #     xcodebuild extract ARCHS=x86_64.
   #   - linux-aarch64: skipped — gtk4-layer-shell isn't packaged for it yet.
   #   - Windows: unsupported upstream.
   skip:
     - win
     - linux and aarch64
     - linux and ppc64le
-    - osx and x86_64
   script:
     file: build
 

@@ -53,9 +53,32 @@ if [[ "${target_platform}" == osx-* ]]; then
     BUILD_DIR="${SRC_DIR}/build-macos"
     mkdir -p "${BUILD_DIR}"
 
+    # Pick the build arch from target_platform. For osx-arm64 (native on
+    # the runner) the xcframework "native" target is what we want. For
+    # osx-64 we're cross-compiling from the arm64 runner — but zig's
+    # xcframework "native" target is hardwired to the *zig host* arch
+    # (aarch64 here) regardless of -Dtarget, and the enum has no
+    # x86_64-only option, so we build the *universal* xcframework (which
+    # includes the x86_64-macos slice — plus, wastefully, the iOS slices)
+    # and let xcodebuild extract ARCHS=x86_64 from the fat lib.
+    case "${target_platform}" in
+        osx-arm64)
+            xc_framework_target="native"
+            xc_arch="arm64"
+            ;;
+        osx-64)
+            xc_framework_target="universal"
+            xc_arch="x86_64"
+            ;;
+        *)
+            echo "ERROR: unexpected target_platform '${target_platform}'"; exit 1
+            ;;
+    esac
+    echo "==> Building for ${target_platform}: xcframework=${xc_framework_target} arch=${xc_arch}"
+
     # Two-step build (instead of upstream's bundled `zig build` →
     # `xcodebuild -configuration ReleaseLocal`):
-    #   1. zig build the xcframework (libghostty core for arm64-only).
+    #   1. zig build the xcframework (libghostty core).
     #   2. xcodebuild -configuration Release -scheme Ghostty for the .app.
     # We tried the bundled path; xcodebuild's ReleaseLocal config tripped
     # a Swift compile error in the Ghostty target that the Release config
@@ -63,25 +86,23 @@ if [[ "${target_platform}" == osx-* ]]; then
     # Release + ad-hoc signing produces a working bundle, so we stick with
     # the more explicit flow.
 
-    # Step 1: produce macos/GhosttyKit.xcframework. -Dxcframework-target=native
-    # limits to the arm64 slice, skipping universal/iOS slices we don't need.
-    # Without this the x86_64-macos slice triggers a zig codegen panic.
+    # Step 1: produce macos/GhosttyKit.xcframework.
     zig build \
         --system "${ZIG_GLOBAL_CACHE_DIR}/p" \
         -Doptimize=ReleaseFast \
         -Demit-macos-app=false \
-        -Dxcframework-target=native \
+        -Dxcframework-target="${xc_framework_target}" \
         -Dversion-string="${PKG_VERSION}-conda"
 
     # Step 2: xcodebuild against the xcframework produced above.
-    # ARCHS=arm64 + ONLY_ACTIVE_ARCH=YES restricts to the arm64 slice.
+    # ARCHS=<arch> + ONLY_ACTIVE_ARCH=YES restricts to the one slice.
     xcodebuild \
         -project macos/Ghostty.xcodeproj \
         -scheme Ghostty \
         -configuration Release \
         -destination "generic/platform=macOS" \
         -derivedDataPath "${BUILD_DIR}/DerivedData" \
-        ARCHS=arm64 \
+        ARCHS="${xc_arch}" \
         ONLY_ACTIVE_ARCH=YES \
         SYMROOT="${BUILD_DIR}" \
         CODE_SIGN_IDENTITY=- \
