@@ -53,9 +53,20 @@ if [[ "${target_platform}" == osx-* ]]; then
     BUILD_DIR="${SRC_DIR}/build-macos"
     mkdir -p "${BUILD_DIR}"
 
+    # Both osx_arm64 and osx_64 build *natively* (no build_platform mapping),
+    # so the runner's arch == the target arch. `-Dxcframework-target=native`
+    # builds only that arch's slice of the xcframework (skipping the default
+    # universal/iOS slices). Derive the xcodebuild arch from target_platform.
+    case "${target_platform}" in
+        osx-arm64) xc_arch="arm64" ;;
+        osx-64)    xc_arch="x86_64" ;;
+        *) echo "ERROR: unexpected target_platform '${target_platform}'"; exit 1 ;;
+    esac
+    echo "==> Building natively for ${target_platform} (arch=${xc_arch})"
+
     # Two-step build (instead of upstream's bundled `zig build` →
     # `xcodebuild -configuration ReleaseLocal`):
-    #   1. zig build the xcframework (libghostty core for arm64-only).
+    #   1. zig build the xcframework (libghostty core, native arch only).
     #   2. xcodebuild -configuration Release -scheme Ghostty for the .app.
     # We tried the bundled path; xcodebuild's ReleaseLocal config tripped
     # a Swift compile error in the Ghostty target that the Release config
@@ -63,9 +74,7 @@ if [[ "${target_platform}" == osx-* ]]; then
     # Release + ad-hoc signing produces a working bundle, so we stick with
     # the more explicit flow.
 
-    # Step 1: produce macos/GhosttyKit.xcframework. -Dxcframework-target=native
-    # limits to the arm64 slice, skipping universal/iOS slices we don't need.
-    # Without this the x86_64-macos slice triggers a zig codegen panic.
+    # Step 1: produce macos/GhosttyKit.xcframework for the native arch.
     zig build \
         --system "${ZIG_GLOBAL_CACHE_DIR}/p" \
         -Doptimize=ReleaseFast \
@@ -74,14 +83,14 @@ if [[ "${target_platform}" == osx-* ]]; then
         -Dversion-string="${PKG_VERSION}-conda"
 
     # Step 2: xcodebuild against the xcframework produced above.
-    # ARCHS=arm64 + ONLY_ACTIVE_ARCH=YES restricts to the arm64 slice.
+    # ARCHS=<arch> + ONLY_ACTIVE_ARCH=YES restricts to the native slice.
     xcodebuild \
         -project macos/Ghostty.xcodeproj \
         -scheme Ghostty \
         -configuration Release \
         -destination "generic/platform=macOS" \
         -derivedDataPath "${BUILD_DIR}/DerivedData" \
-        ARCHS=arm64 \
+        ARCHS="${xc_arch}" \
         ONLY_ACTIVE_ARCH=YES \
         SYMROOT="${BUILD_DIR}" \
         CODE_SIGN_IDENTITY=- \

@@ -26,7 +26,7 @@ source:
     - patches/drop-iconcomposer-icon.patch
 
 build:
-  number: 0
+  number: 1
   dynamic_linking:
     # On osx we ship a self-contained .app bundle with Sparkle.framework
     # inside Contents/Frameworks/. xcodebuild emits the standard
@@ -48,22 +48,20 @@ build:
         then: "**"
   # Platform support, current state:
   #   - linux-64: built via zig (see build.sh, linux branch).
-  #   - osx-arm64: built via xcodebuild + ad-hoc codesigning against
-  #     macos/Ghostty.xcodeproj (see build.sh, osx branch). Going native-arm
-  #     first because earlier osx-64 attempts panicked inside zig
-  #     ("reached unreachable code" compiling x86_64-macos.13.0 against
-  #     MacOSX15.5.sdk) — we suspected the conda-forge x86_64 zig running
-  #     under Rosetta on an Apple Silicon runner.
-  #   - osx-64: temporarily skipped. With build_platform.osx_64=osx_arm64
-  #     in conda-forge.yml the osx_64 build would cross-compile from arm64,
-  #     but we want osx-arm64 green first before opening up the cross-build.
+  #   - osx-arm64: built natively via xcodebuild + ad-hoc codesigning
+  #     against macos/Ghostty.xcodeproj (see build.sh, osx branch).
+  #   - osx-64: built *natively* on an Intel macOS agent (no build_platform
+  #     mapping). The cross-compile-from-osx_arm64 route (#5) doesn't work —
+  #     the arm64 zig panics ("reached unreachable code") generating the
+  #     x86_64-macos slice — so a native x86_64 zig builds it instead. (The
+  #     even-earlier failures of x86_64 zig under Rosetta on an arm64 agent
+  #     were a third, separate path.)
   #   - linux-aarch64: skipped — gtk4-layer-shell isn't packaged for it yet.
   #   - Windows: unsupported upstream.
   skip:
     - win
     - linux and aarch64
     - linux and ppc64le
-    - osx and x86_64
   script:
     file: build
 
