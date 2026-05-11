@@ -26,7 +26,7 @@ source:
     - patches/drop-iconcomposer-icon.patch
 
 build:
-  number: 0
+  number: 1
   dynamic_linking:
     # On osx we ship a self-contained .app bundle with Sparkle.framework
     # inside Contents/Frameworks/. xcodebuild emits the standard
