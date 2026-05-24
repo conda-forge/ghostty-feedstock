@@ -20,7 +20,8 @@
                         "TerminalEmulator"
                     ],
                     "StartupNotify": true,
-                    "DBusActivatable": false
+                    "DBusActivatable": false,
+                    "StartupWMClass": "com.mitchellh.ghostty"
                 },
                 "osx": {
                     "command": [
