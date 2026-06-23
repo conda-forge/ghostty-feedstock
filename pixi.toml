@@ -5,7 +5,7 @@
 
 [workspace]
 name = "ghostty-feedstock"
-version = "3.62.0"  # conda-smithy version used to generate this file
+version = "2026.6.14"  # conda-smithy version used to generate this file
 description = "Pixi configuration for conda-forge/ghostty-feedstock"
 authors = ["@conda-forge/ghostty"]
 channels = ["conda-forge"]
@@ -29,6 +29,12 @@ description = "Build ghostty-feedstock with variant linux_64_ directly (without 
 [tasks."inspect-linux_64_"]
 cmd = "inspect_artifacts --recipe-dir recipe -m .ci_support/linux_64_.yaml"
 description = "List contents of ghostty-feedstock packages built for variant linux_64_"
+[tasks."build-linux_aarch64_"]
+cmd = "rattler-build build --recipe recipe -m .ci_support/linux_aarch64_.yaml"
+description = "Build ghostty-feedstock with variant linux_aarch64_ directly (without setup scripts)"
+[tasks."inspect-linux_aarch64_"]
+cmd = "inspect_artifacts --recipe-dir recipe -m .ci_support/linux_aarch64_.yaml"
+description = "List contents of ghostty-feedstock packages built for variant linux_aarch64_"
 [tasks."build-osx_arm64_"]
 cmd = "rattler-build build --recipe recipe -m .ci_support/osx_arm64_.yaml"
 description = "Build ghostty-feedstock with variant osx_arm64_ directly (without setup scripts)"
