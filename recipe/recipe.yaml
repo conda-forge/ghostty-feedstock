@@ -1,6 +1,6 @@
 context:
   name: ghostty
-  version: "1.3.1"
+  version: "1.4.0"
 
 package:
   name: ${{ name }}
@@ -8,7 +8,7 @@ package:
 
 source:
   url: https://release.files.ghostty.org/${{ version }}/ghostty-${{ version }}.tar.gz
-  sha256: 3349d25600ffbda281197a18314f7d18791969cffe9474f0ff16a45a9ebfccdb
+  sha256: cb188ac6c3a8278d5fd7bfef15d8c017104c87f638b5560eb38024a71ae0f005
   patches:
     # Mark NSDockTile.setIcon's parameter as `sending` so Xcode 16.4's
     # Swift 6 compiler accepts the cross-actor transfer to DispatchQueue.main.
@@ -26,7 +26,7 @@ source:
     - patches/drop-iconcomposer-icon.patch
 
 build:
-  number: 4
+  number: 0
   dynamic_linking:
     # On osx we ship a self-contained .app bundle with Sparkle.framework
     # inside Contents/Frameworks/. xcodebuild emits the standard
