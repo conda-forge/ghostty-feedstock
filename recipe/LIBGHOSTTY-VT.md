@@ -30,7 +30,9 @@ The library build disables the executable, docs, macOS app, and XCFramework.
 SIMD is disabled to avoid adding its C/C++ dependencies. The build reuses the
 release's dependency-cache manifest and the existing Linux conda libc
 configuration. Both builds use `zig_cache.py` and honor the toolchain's
-`ZIG_GLOBAL_CACHE_DIR` when available. Zig 0.17 stores dependency archives under
+`ZIG_GLOBAL_CACHE_DIR` when available. Python build helpers select the executable
+from `ZIG` or `CONDA_ZIG_BUILD`, with a build-prefix fallback for the Windows
+triplet-named compiler; the Windows toolchain need not provide a bare `zig.exe`. Zig 0.17 stores dependency archives under
 `p/`; the helper unpacks them into hash-named directories under `conda-packages/`
 for `--system`. Passing the archive directory directly to `--system`, as in the
 old recipe, triggers an internal Zig panic.
@@ -72,17 +74,30 @@ and free an OSC parser, linked separately against the shared library and static
 archive. Unix tests use pkg-config flags; Windows checks pkg-config metadata
 and uses the corresponding import/static library with MSVC.
 
-For 1.4.0, release archive checksum verification, conda-smithy lint/rerender, and
-dependency solves for Windows, Linux aarch64, and both macOS targets have passed.
-Before separating the output versions, the native linux-64 library package
-build, content checks, and both shared
-and static C compile-and-run tests passed. The version-only update is verified
-by recipe rendering and lint; those binaries were built under package version
-1.4.0. Local builds reused the prefetched
-cache with `--env-isolation none`. The native linux-64 application package
-build, content checks, `ghostty --version`, and `ghostty +help` also passed.
-Python and shell syntax checks, both patch applicability checks, and verification
-of all ten fallback macOS icon PNG dimensions passed locally. Xcode compilation
-of those assets remains untested here.
-Native Windows, Linux aarch64, and both macOS architectures require CI validation.
-Previous 1.3.1 build and cross-build results do not validate the 1.4.0 update.
+Local validation passed for the release checksum, conda-smithy lint/rerender,
+recipe rendering, dependency solves, Python/C/shell syntax, patch applicability,
+and all ten fallback macOS icon PNG dimensions. Local Linux application and
+library builds and tests passed; the library was initially tested under package
+version 1.4.0 before its output version was separated.
+
+CI for commit `254bd8d` subsequently built and tested the final output versions:
+
+| Platform | Application | Library shared/static linking and runtime tests |
+| --- | --- | --- |
+| linux-64 | Passed | Passed |
+| linux-aarch64 | Skipped | Passed |
+| osx-arm64 | Passed, including Xcode/icon assets | Passed |
+| osx-64 | Skipped | Passed |
+
+Those four jobs failed only at conda-forge output validation because
+`libghostty-vt` is not registered for `ghostty-feedstock`. This requires an
+`add_feedstock_output` request in conda-forge/admin-requests; output validation
+remains enabled in this feedstock.
+
+The Windows job stopped before compilation: Python could not locate a bare
+`zig` command. The executable-discovery fix uses the activated `ZIG` or
+`CONDA_ZIG_BUILD` compiler, with a fallback to the triplet-named executable in
+`BUILD_PREFIX/Library/bin`. Local checks exercised fetching with no bare `zig`
+on PATH, each discovery route, and executable paths containing spaces; resolving
+and invoking the actual Linux Zig 0.17.0 compiler also passed. Native Windows
+compilation and runtime tests still need a CI retry with this fix.

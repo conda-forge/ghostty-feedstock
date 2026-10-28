@@ -1,13 +1,32 @@
 """Prepare Ghostty's offline system package directory for Zig 0.17."""
 import os
 import re
+import shutil
 from pathlib import Path
 import subprocess
 import tarfile
 import tempfile
 
 
-def prepare_cache(src, cache):
+def zig_executable():
+    # Windows conda packages provide a triplet-named executable, and may not
+    # provide a bare zig.exe. Prefer the compiler selected by activation.
+    for command in [os.environ.get('ZIG'), os.environ.get('CONDA_ZIG_BUILD'), 'zig']:
+        if command:
+            executable = shutil.which(command)
+            if executable:
+                return executable
+    # Also handle build environments where activation did not export ZIG.
+    build_prefix = os.environ.get('BUILD_PREFIX')
+    if build_prefix:
+        executable = Path(build_prefix) / 'Library/bin/x86_64-w64-mingw32-zig.exe'
+        if executable.is_file():
+            return str(executable)
+    raise FileNotFoundError('Cannot find the build-platform Zig compiler; checked ZIG, CONDA_ZIG_BUILD, PATH, and BUILD_PREFIX')
+
+
+def prepare_cache(src, cache, zig=None):
+    zig = zig or zig_executable()
     cache.mkdir(parents=True, exist_ok=True)
     os.environ['ZIG_GLOBAL_CACHE_DIR'] = str(cache)
     packages = cache / 'conda-packages'
@@ -25,7 +44,7 @@ def prepare_cache(src, cache):
         print(f'Fetching: {url}', flush=True)
         package_hash = hashes.get(url)
         if package_hash is None or not (cache / 'p' / (package_hash + '.tar.gz')).is_file():
-            package_hash = subprocess.check_output(['zig', 'fetch', url], text=True).strip()
+            package_hash = subprocess.check_output([zig, 'fetch', url], text=True).strip()
         destination = packages / package_hash
         if destination.is_dir():
             continue
