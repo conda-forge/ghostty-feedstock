@@ -4,14 +4,14 @@ set -euo pipefail
 # Fetch zig dependencies into an offline cache. This step requires network and
 # is shared by both branches — Ghostty's macOS Xcode project also shells out
 # to zig for the core terminal libs.
-export ZIG_GLOBAL_CACHE_DIR="${SRC_DIR}/zig-cache"
+export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-${SRC_DIR}/zig-cache}"
 mkdir -p "${ZIG_GLOBAL_CACHE_DIR}"
-./nix/build-support/fetch-zig-cache.sh
+python "${RECIPE_DIR}/zig_cache.py"
 
 if [[ "${target_platform}" == osx-* ]]; then
     # ---------------- macOS branch ----------------
     # Per upstream's https://ghostty.org/docs/install/build, `zig build
-    # -Doptimize=ReleaseFast` (no -Demit-macos-app=false) drives the whole
+    # -Doptimize=fast` (no -Demit-macos-app=false) drives the whole
     # .app build — it produces the libghostty xcframework AND invokes
     # xcodebuild against it under the "ReleaseLocal" configuration, which
     # specifically disables Library Validation so the resulting bundle
@@ -19,7 +19,7 @@ if [[ "${target_platform}" == osx-* ]]; then
     # exactly our situation, so we follow the documented recipe instead
     # of orchestrating xcframework + xcodebuild ourselves.
 
-    # Ghostty 1.3.1's macOS sources reference Tahoe-era SDK symbols
+    # Ghostty 1.4.0's macOS sources reference Tahoe-era SDK symbols
     # (NSGlassEffectView, ConcentricRectangle, etc.) that aren't in
     # MacOSX15.5.sdk shipped with Xcode 16.4 — Backport.swift gates the
     # *uses* with @available, but the *symbols* still need to exist at
@@ -50,6 +50,9 @@ if [[ "${target_platform}" == osx-* ]]; then
         exit 1
     fi
 
+    # Replace Icon Composer with a classic catalog built from upstream PNGs.
+    python "${RECIPE_DIR}/macos_icons.py"
+
     BUILD_DIR="${SRC_DIR}/build-macos"
     mkdir -p "${BUILD_DIR}"
 
@@ -67,8 +70,8 @@ if [[ "${target_platform}" == osx-* ]]; then
     # limits to the arm64 slice, skipping universal/iOS slices we don't need.
     # Without this the x86_64-macos slice triggers a zig codegen panic.
     zig build \
-        --system "${ZIG_GLOBAL_CACHE_DIR}/p" \
-        -Doptimize=ReleaseFast \
+        --system "${ZIG_GLOBAL_CACHE_DIR}/conda-packages" \
+        -Doptimize=fast \
         -Demit-macos-app=false \
         -Dxcframework-target=native \
         -Dversion-string="${PKG_VERSION}-conda"
@@ -133,7 +136,8 @@ sys_include_dir=${BUILD_PREFIX}/${HOST}/sysroot/usr/include
 crt_dir=${BUILD_PREFIX}/${HOST}/sysroot/usr/lib64
 msvc_lib_dir=
 kernel32_lib_dir=
-gcc_dir=${gcc_dir}
+cc_dir=${gcc_dir}
+darwin_sdk_dir=
 EOF
 
 # When --sysroot is passed to zig, every -L path (including the conda host
@@ -164,14 +168,16 @@ fi
 # Build ghostty using the prefetched cache. No further network is needed.
 zig build \
     --prefix "${PREFIX}" \
-    --system "${ZIG_GLOBAL_CACHE_DIR}/p" \
+    --system "${ZIG_GLOBAL_CACHE_DIR}/conda-packages" \
     --sysroot "${sysroot_dir}" \
     --libc "${libc_txt}" \
     --search-prefix "${PREFIX}" \
-    -Doptimize=ReleaseFast \
+    -Doptimize=fast \
     -Dcpu=baseline \
+    -Dtarget="x86_64-linux-gnu.${c_stdlib_version}" \
     -Dversion-string="${PKG_VERSION}-conda" \
     -Dpie=true \
+    -Dbuild-glibc-version="${c_stdlib_version}.0" \
     "${extra_flags[@]}"
 
 # Drop the bzip2 build-time symlink so it doesn't ship in the package.
