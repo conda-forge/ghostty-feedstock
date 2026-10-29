@@ -88,16 +88,19 @@ CI for commit `254bd8d` subsequently built and tested the final output versions:
 | linux-aarch64 | Skipped | Passed |
 | osx-arm64 | Passed, including Xcode/icon assets | Passed |
 | osx-64 | Skipped | Passed |
+| win-64 (commit `18b816c`) | Skipped | Passed |
 
-Those four jobs failed only at conda-forge output validation because
-`libghostty-vt` is not registered for `ghostty-feedstock`. This requires an
-`add_feedstock_output` request in conda-forge/admin-requests; output validation
-remains enabled in this feedstock.
+The Linux/macOS jobs and Windows retry failed only at conda-forge output
+validation. Registration of `libghostty-vt` for `ghostty-feedstock` was approved
+in [conda-forge/admin-requests#2439](https://github.com/conda-forge/admin-requests/pull/2439),
+merged on October 29, 2026. CI must be rerun to verify output validation after
+registration; output validation remains enabled in this feedstock.
 
 The Windows job stopped before compilation: Python could not locate a bare
 `zig` command. The executable-discovery fix uses the activated `ZIG` or
 `CONDA_ZIG_BUILD` compiler, with a fallback to the triplet-named executable in
 `BUILD_PREFIX/Library/bin`. Local checks exercised fetching with no bare `zig`
 on PATH, each discovery route, and executable paths containing spaces; resolving
-and invoking the actual Linux Zig 0.17.0 compiler also passed. Native Windows
-compilation and runtime tests still need a CI retry with this fix.
+and invoking the actual Linux Zig 0.17.0 compiler also passed. The native Windows
+retry on commit `18b816c` built the library and passed package contents,
+shared/static C linking, and runtime tests.
