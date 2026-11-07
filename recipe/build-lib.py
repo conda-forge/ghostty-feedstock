@@ -40,7 +40,7 @@ if platform.startswith('win-'):
 pcdir = prefix / 'lib/pkgconfig'
 pcdir.mkdir(parents=True, exist_ok=True)
 for name in ['libghostty-vt.pc', 'libghostty-vt-static.pc']:
-    pc = prefix / 'share/pkgconfig' / name
+    pc = pcdir / name
     # Use forward slashes for pkgconf on Windows too.
     text = '\n'.join('prefix=' + prefix.as_posix() if line.startswith('prefix=') else line
                      for line in pc.read_text().splitlines()) + '\n'
@@ -50,5 +50,4 @@ for name in ['libghostty-vt.pc', 'libghostty-vt-static.pc']:
         if platform.startswith('win-'):
             text = text.replace('Libs: ${libdir}/ghostty-vt-static.lib',
                                 'Libs: ${libdir}/ghostty-vt-static.lib -lntdll -lkernel32')
-    (pcdir / name).write_text(text)
-    pc.unlink()
+    pc.write_text(text)
