@@ -40,7 +40,7 @@ pcdir = prefix / 'lib/pkgconfig'
 pcdir.mkdir(parents=True, exist_ok=True)
 for name in ['libghostty-vt.pc', 'libghostty-vt-static.pc']:
     pc = prefix / 'share/pkgconfig' / name
-    # Use forward slashes for pkg-config on Windows too.
+    # Use forward slashes for pkgconf on Windows too.
     text = '\n'.join('prefix=' + prefix.as_posix() if line.startswith('prefix=') else line
                      for line in pc.read_text().splitlines()) + '\n'
     if name.endswith('-static.pc'):

@@ -9,10 +9,10 @@ windows = sys.platform == 'win32'
 prefix = Path(os.environ['CONDA_PREFIX']) / ('Library' if windows else '')
 os.environ['PKG_CONFIG_PATH'] = str(prefix / 'lib/pkgconfig')
 for name in ['libghostty-vt', 'libghostty-vt-static']:
-    flags = shlex.split(subprocess.check_output(['pkg-config', '--cflags', '--libs', name], text=True))
+    flags = shlex.split(subprocess.check_output(['pkgconf', '--cflags', '--libs', name], text=True))
     exe = Path.cwd() / (name + ('.exe' if windows else ''))
     if windows:
-        # cl does not accept pkg-config's Unix-style -l/-L options.
+        # cl does not accept pkgconf's Unix-style -l/-L options.
         library = 'ghostty-vt-static.lib' if name.endswith('-static') else 'ghostty-vt.lib'
         defines = ['/DGHOSTTY_STATIC'] if name.endswith('-static') else []
         cmd = ['cl', *defines, '/nologo', str(source), '/I' + str(prefix / 'include'),

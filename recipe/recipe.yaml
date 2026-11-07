@@ -84,7 +84,7 @@ outputs:
             - ${{ compiler('c') }}
             - ${{ compiler('cxx') }}
             - ${{ stdlib('c') }}
-            - pkg-config
+            - pkgconf
             - gettext
             - libxml2
             - gobject-introspection
@@ -220,7 +220,7 @@ outputs:
           run:
             - python >=3.11
             - ${{ compiler('c') }}
-            - pkg-config
+            - pkgconf
         files:
           recipe:
             - test-lib.py
