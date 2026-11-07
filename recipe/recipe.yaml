@@ -166,10 +166,13 @@ outputs:
       name: libghostty-vt
       version: ${{ lib_version }}
     source:
-      url: https://release.files.ghostty.org/libghostty-vt/${{ lib_version }}/libghostty-vt-${{ lib_version }}.tar.gz
-      sha256: 4a6ef758be721923e1969e7b81b443dcc92d8dd3fb5a39600c03a8817a753676
-      patches:
-        - patches/build-glibc-version.patch
+      - url: https://release.files.ghostty.org/libghostty-vt/${{ lib_version }}/libghostty-vt-${{ lib_version }}.tar.gz
+        sha256: 4a6ef758be721923e1969e7b81b443dcc92d8dd3fb5a39600c03a8817a753676
+        patches:
+          - patches/build-glibc-version.patch
+      - url: https://release.files.ghostty.org/libghostty-vt/${{ lib_version }}/libghostty-vt-${{ lib_version }}-deps.tar.gz
+        sha256: 4d5ea5e448e4c7ea8fb55ccbaa8668f2a97d44f438cee831e2b7ecd162d85c29
+        target_directory: vt-deps
     about:
       summary: Ghostty VT parsing library with a C API
       description: Standalone terminal sequence parsing library, without the Ghostty GUI.
