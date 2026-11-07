@@ -6,15 +6,6 @@ recipe:
   name: ghostty
   version: ${{ version }}
 
-source:
-  url: https://release.files.ghostty.org/${{ version }}/ghostty-${{ version }}.tar.gz
-  sha256: cb188ac6c3a8278d5fd7bfef15d8c017104c87f638b5560eb38024a71ae0f005
-  patches:
-    # Build-time executables must use the conda sysroot glibc target too.
-    - patches/build-glibc-version.patch
-    # Keep the existing headless-macOS icon compiler workaround.
-    - patches/drop-iconcomposer-icon.patch
-
 build:
   number: 0
   skip: target_platform not in ["linux-64", "linux-aarch64", "osx-arm64", "osx-64", "win-64"]
@@ -22,6 +13,14 @@ build:
 outputs:
   - package:
       name: ghostty
+    source:
+      url: https://release.files.ghostty.org/${{ version }}/ghostty-${{ version }}.tar.gz
+      sha256: cb188ac6c3a8278d5fd7bfef15d8c017104c87f638b5560eb38024a71ae0f005
+      patches:
+        # Build-time executables must use the conda sysroot glibc target too.
+        - patches/build-glibc-version.patch
+        # Keep the existing headless-macOS icon compiler workaround.
+        - patches/drop-iconcomposer-icon.patch
     build:
       number: 0
       dynamic_linking:
