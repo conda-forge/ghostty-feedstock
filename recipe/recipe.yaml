@@ -244,4 +244,5 @@ about:
 extra:
   feedstock-name: ghostty
   recipe-maintainers:
+    - davidbrochart
     - tdejager
