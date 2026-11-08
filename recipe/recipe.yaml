@@ -1,19 +1,10 @@
 context:
   version: "1.4.0"
-  lib_version: "0.1.0.dev"
+  lib_version: "1.0.0"
 
 recipe:
   name: ghostty
   version: ${{ version }}
-
-source:
-  url: https://release.files.ghostty.org/${{ version }}/ghostty-${{ version }}.tar.gz
-  sha256: cb188ac6c3a8278d5fd7bfef15d8c017104c87f638b5560eb38024a71ae0f005
-  patches:
-    # Build-time executables must use the conda sysroot glibc target too.
-    - patches/build-glibc-version.patch
-    # Keep the existing headless-macOS icon compiler workaround.
-    - patches/drop-iconcomposer-icon.patch
 
 build:
   number: 0
@@ -22,6 +13,14 @@ build:
 outputs:
   - package:
       name: ghostty
+    source:
+      url: https://release.files.ghostty.org/${{ version }}/ghostty-${{ version }}.tar.gz
+      sha256: cb188ac6c3a8278d5fd7bfef15d8c017104c87f638b5560eb38024a71ae0f005
+      patches:
+        # Build-time executables must use the conda sysroot glibc target too.
+        - patches/build-glibc-version.patch
+        # Keep the existing headless-macOS icon compiler workaround.
+        - patches/drop-iconcomposer-icon.patch
     build:
       number: 0
       dynamic_linking:
@@ -84,7 +83,7 @@ outputs:
             - ${{ compiler('c') }}
             - ${{ compiler('cxx') }}
             - ${{ stdlib('c') }}
-            - pkg-config
+            - pkgconf
             - gettext
             - libxml2
             - gobject-introspection
@@ -166,6 +165,14 @@ outputs:
   - package:
       name: libghostty-vt
       version: ${{ lib_version }}
+    source:
+      - url: https://release.files.ghostty.org/libghostty-vt/${{ lib_version }}/libghostty-vt-${{ lib_version }}.tar.gz
+        sha256: 4a6ef758be721923e1969e7b81b443dcc92d8dd3fb5a39600c03a8817a753676
+        patches:
+          - patches/build-glibc-version.patch
+      - url: https://release.files.ghostty.org/libghostty-vt/${{ lib_version }}/libghostty-vt-${{ lib_version }}-deps.tar.gz
+        sha256: 4d5ea5e448e4c7ea8fb55ccbaa8668f2a97d44f438cee831e2b7ecd162d85c29
+        target_directory: vt-deps
     about:
       summary: Ghostty VT parsing library with a C API
       description: Standalone terminal sequence parsing library, without the Ghostty GUI.
@@ -176,9 +183,9 @@ outputs:
         interpreter: python
         file: build-lib.py
     requirements:
-      # The experimental 0.1 C ABI may change between Ghostty releases.
+      # The stable C ABI is compatible within the same major version.
       run_exports:
-        - ${{ pin_subpackage('libghostty-vt', exact=True) }}
+        - ${{ pin_subpackage('libghostty-vt', upper_bound='x') }}
       build:
         - zig 0.17.0.*
         - python >=3.11
@@ -199,11 +206,11 @@ outputs:
                 - Library/lib/pkgconfig/libghostty-vt-static.pc
             - if: linux
               then:
-                - lib/libghostty-vt.so.0.1.0
+                - lib/libghostty-vt.so.${{ lib_version }}
                 - lib/libghostty-vt.a
             - if: osx
               then:
-                - lib/libghostty-vt.0.1.0.dylib
+                - lib/libghostty-vt.${{ lib_version }}.dylib
                 - lib/libghostty-vt.a
             - if: win
               then:
@@ -215,7 +222,7 @@ outputs:
           run:
             - python >=3.11
             - ${{ compiler('c') }}
-            - pkg-config
+            - pkgconf
         files:
           recipe:
             - test-lib.py
