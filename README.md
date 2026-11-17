@@ -3,25 +3,6 @@ About ghostty-feedstock
 
 Feedstock license: [BSD-3-Clause](https://github.com/conda-forge/ghostty-feedstock/blob/main/LICENSE.txt)
 
-
-About ghostty
--------------
-
-Home: https://ghostty.org/
-
-Package license: MIT
-
-Summary: Ghostty VT parsing library with a C API
-
-Development: https://github.com/ghostty-org/ghostty
-
-Documentation: https://ghostty.org/docs
-
-Standalone terminal sequence parsing library, without the Ghostty GUI.
-
-About ghostty
--------------
-
 Home: https://ghostty.org/
 
 Package license: MIT
@@ -62,13 +43,6 @@ Current build status
         <table>
           <thead><tr><th>Variant</th><th>Status</th></tr></thead>
           <tbody><tr>
-              <td>osx_64</td>
-              <td>
-                <a href="https://dev.azure.com/conda-forge/feedstock-builds/_build/latest?definitionId=28207&branchName=main">
-                  <img src="https://dev.azure.com/conda-forge/feedstock-builds/_apis/build/status/ghostty-feedstock?branchName=main&jobName=osx&configuration=osx%20osx_64_" alt="variant">
-                </a>
-              </td>
-            </tr><tr>
               <td>osx_arm64</td>
               <td>
                 <a href="https://dev.azure.com/conda-forge/feedstock-builds/_build/latest?definitionId=28207&branchName=main">
@@ -89,7 +63,6 @@ Current release info
 | Name | Downloads | Version | Platforms |
 | --- | --- | --- | --- |
 | [![Conda Recipe](https://img.shields.io/badge/recipe-ghostty-green.svg)](https://anaconda.org/conda-forge/ghostty) | [![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/ghostty.svg)](https://anaconda.org/conda-forge/ghostty) | [![Conda Version](https://img.shields.io/conda/vn/conda-forge/ghostty.svg)](https://anaconda.org/conda-forge/ghostty) | [![Conda Platforms](https://img.shields.io/conda/pn/conda-forge/ghostty.svg)](https://anaconda.org/conda-forge/ghostty) |
-| [![Conda Recipe](https://img.shields.io/badge/recipe-libghostty--vt-green.svg)](https://anaconda.org/conda-forge/libghostty-vt) | [![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/libghostty-vt.svg)](https://anaconda.org/conda-forge/libghostty-vt) | [![Conda Version](https://img.shields.io/conda/vn/conda-forge/libghostty-vt.svg)](https://anaconda.org/conda-forge/libghostty-vt) | [![Conda Platforms](https://img.shields.io/conda/pn/conda-forge/libghostty-vt.svg)](https://anaconda.org/conda-forge/libghostty-vt) |
 
 Installing ghostty
 ==================
@@ -108,7 +81,7 @@ How to use
 <summary>With conda</summary>
 
 ```
-conda install ghostty libghostty-vt
+conda install ghostty
 ```
 
 </details>
@@ -117,7 +90,7 @@ conda install ghostty libghostty-vt
 <summary>With mamba</summary>
 
 ```
-mamba install ghostty libghostty-vt
+mamba install ghostty
 ```
 
 </details>
@@ -127,9 +100,9 @@ mamba install ghostty libghostty-vt
 
 ```
 # for adding to your local project
-pixi add ghostty libghostty-vt
+pixi add ghostty
 # for installing globally
-pixi global install ghostty libghostty-vt
+pixi global install ghostty
 ```
 
 </details>
