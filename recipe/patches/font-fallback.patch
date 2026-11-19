@@ -1,0 +1,275 @@
+Backport of https://github.com/ghostty-org/ghostty/pull/15216
+Upstream commit: 6d9577708a211b0e6c5e6c6886f3cfb7efc47555
+Includes the three fallback fixes. The feedstock uses system Fontconfig.
+
+From ba283a6f90e77bbe92e49f7c25233d6c58a526c7 Mon Sep 17 00:00:00 2001
+From: "Jeffrey C. Ollie" <jeff@ocjtech.us>
+Date: Thu, 12 Nov 2026 14:11:15 -0600
+Subject: [PATCH 2/4] font/discovery: skip fontconfig matches that have no file
+
+Fontconfig has been seen to return a match, from what is in a user's
+font cache, that carries a charset and a lang but no file, family or
+index. If its charset claims the codepoint being searched for, fallback
+discovery accepts it and the codepoint is assigned a face that can never
+be loaded, even though good fonts for it come later in the sorted list.
+
+Skip a match unless it has the file and index DeferredFace needs to
+load it, so the next candidate is used instead.
+---
+ src/font/discovery.zig | 43 ++++++++++++++++++++++++++++++++----------
+ 1 file changed, 33 insertions(+), 10 deletions(-)
+
+diff --git a/src/font/discovery.zig b/src/font/discovery.zig
+index 4d76af8c047..b48eca68daf 100644
+--- a/src/font/discovery.zig
++++ b/src/font/discovery.zig
+@@ -313,19 +313,42 @@ pub const Fontconfig = struct {
+             self.* = undefined;
+         }
+ 
++        /// True if the pattern names something `DeferredFace` can load:
++        /// a file and an index within it.
++        fn loadable(pat: *fontconfig.Pattern) bool {
++            const file = pat.get(.file, 0) catch return false;
++            if (file != .string) return false;
++            const index = pat.get(.index, 0) catch return false;
++            return index == .integer;
++        }
++
+         pub fn next(self: *DiscoverIterator) fontconfig.Error!?DeferredFace {
+-            if (self.i >= self.fonts.len) return null;
++            const font_pattern = while (self.i < self.fonts.len) {
++                // Get the copied pattern from our fontset that has the
++                // attributes configured for rendering.
++                const font_pattern = try self.config.fontRenderPrepare(
++                    self.pattern,
++                    self.fonts[self.i],
++                );
+ 
+-            // Get the copied pattern from our fontset that has the
+-            // attributes configured for rendering.
+-            const font_pattern = try self.config.fontRenderPrepare(
+-                self.pattern,
+-                self.fonts[self.i],
+-            );
+-            errdefer font_pattern.destroy();
++                // Increment whether we return this font or skip it.
++                self.i += 1;
+ 
+-            // Increment after we return
+-            defer self.i += 1;
++                // A font we cannot open is no use to us however well it
++                // matches. Fontconfig has been seen to return entries
++                // from a user's cache that carry a charset and a lang
++                // but no file, family or index; accepting one wins the
++                // codepoint for a face that can never load, so skip it
++                // and let the next candidate have it.
++                if (loadable(font_pattern)) break font_pattern;
++
++                log.warn(
++                    "skipping fontconfig match with no file or index",
++                    .{},
++                );
++                font_pattern.destroy();
++            } else return null;
++            errdefer font_pattern.destroy();
+ 
+             return DeferredFace{
+                 .fc = .{
+
+From efd4a82bda0b6c36ec3165386e8165002c6fc215 Mon Sep 17 00:00:00 2001
+From: "Jeffrey C. Ollie" <jeff@ocjtech.us>
+Date: Thu, 12 Nov 2026 14:11:15 -0600
+Subject: [PATCH 3/4] font: treat a fallback face that fails to load as no font
+
+SharedGrid.getIndex preloads the face it resolves a codepoint to, and
+returned the error if the load failed. The run iterator passes that
+error up and the renderer, on any error building a row, clears the
+whole row. So one codepoint whose face cannot be loaded blanked every
+row it appeared on, and because the failed lookup was not cached, the
+load was retried on every frame.
+
+Seen with U+1F17C on a system where fontconfig returned a match with
+no file: every row containing it was blank, while the text was still
+there to copy.
+
+Log the failure and cache the codepoint as having no font instead, so
+the run iterator falls back to U+FFFD for that cell. OutOfMemory is
+still returned, since it may pass.
+---
+ src/font/SharedGrid.zig | 73 ++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 69 insertions(+), 4 deletions(-)
+
+diff --git a/src/font/SharedGrid.zig b/src/font/SharedGrid.zig
+index 81b7d77a602..0f300124c17 100644
+--- a/src/font/SharedGrid.zig
++++ b/src/font/SharedGrid.zig
+@@ -30,6 +30,7 @@ const Collection = font.Collection;
+ const Face = font.Face;
+ const Glyph = font.Glyph;
+ const Library = font.Library;
++const DeferredFace = font.DeferredFace;
+ const Metrics = font.Metrics;
+ const Presentation = font.Presentation;
+ const Style = font.Style;
+@@ -188,10 +189,22 @@ pub fn getIndex(
+         // because getFace doesn't work with special fonts.
+         if (idx.special() != null) break :preload;
+ 
+-        // Load the face in case its deferred. If this fails then we would've
+-        // failed to load it in the future anyways so we want to undo all
+-        // the caching we did.
+-        _ = try self.resolver.collection.getFace(idx);
++        // Load the face in case its deferred. If it cannot be loaded now
++        // it never will be, so treat the codepoint as having no font and
++        // cache that. Returning the error would make the caller drop
++        // everything around this codepoint (the renderer clears the whole
++        // row) and retry the same failing load on every frame. Running out
++        // of memory is the exception: that may pass, so it is returned and
++        // the errdefer above forgets this lookup.
++        _ = self.resolver.collection.getFace(idx) catch |err| {
++            if (err == error.OutOfMemory) return error.OutOfMemory;
++            log.warn(
++                "unable to load face for codepoint={X} err={}",
++                .{ cp, err },
++            );
++            gop.value_ptr.* = null;
++            return null;
++        };
+     }
+ 
+     return value;
+@@ -596,6 +609,58 @@ test getIndex {
+     }
+ }
+ 
++test "getIndex: face that fails to load is treated as no font" {
++    // Fontconfig can hand back a match whose charset claims a codepoint but
++    // which has no file to load. Choosing that face for the codepoint must
++    // not turn into an error: the renderer would drop the whole row and
++    // retry the load on every frame.
++    if (comptime font.options.backend != .fontconfig_freetype) return error.SkipZigTest;
++
++    const testing = std.testing;
++    const alloc = testing.allocator;
++    const fontconfig = @import("fontconfig");
++
++    var lib = try Library.init(alloc);
++    defer lib.deinit();
++
++    var grid = try testGrid(.normal, alloc, lib);
++    defer grid.deinit(alloc);
++
++    // U+1F17C NEGATIVE SQUARED LATIN CAPITAL LETTER M, which the primary
++    // font does not have.
++    const cp = 0x1F17C;
++
++    const pat = fontconfig.Pattern.create();
++    {
++        const cs = fontconfig.CharSet.create();
++        defer cs.destroy();
++        try testing.expect(cs.addChar(cp));
++        try testing.expect(pat.add(.charset, .{ .char_set = cs }, false));
++    }
++    try testing.expect(pat.add(.lang, .{ .string = "en" }, false));
++    var deferred: DeferredFace = .{ .fc = .{
++        .pattern = pat,
++        .charset = (try pat.get(.charset, 0)).char_set,
++        .langset = try pat.get(.lang, 0),
++        .variations = &.{},
++    } };
++    _ = grid.resolver.collection.addDeferred(alloc, deferred, .{
++        .style = .regular,
++        .fallback = true,
++        .size_adjustment = .none,
++    }) catch |err| {
++        deferred.deinit();
++        return err;
++    };
++
++    try testing.expectEqual(null, try grid.getIndex(alloc, cp, .regular, null));
++
++    // The miss is cached rather than retried.
++    const key = CodepointKey.from(.{ .style = .regular, .codepoint = cp, .presentation = null });
++    try testing.expectEqual(@as(??Collection.Index, @as(?Collection.Index, null)), grid.codepoints.get(key));
++    try testing.expectEqual(null, try grid.getIndex(alloc, cp, .regular, null));
++}
++
+ test "renderGlyph error after cache insert rolls back cache entry" {
+     // This test verifies that when renderGlyph fails after inserting a cache
+     // entry (via getOrPut), the errdefer properly removes the entry, preventing
+
+From ef21f065f899575cb58616ebb9c03b2c9da611fb Mon Sep 17 00:00:00 2001
+From: "Jeffrey C. Ollie" <jeff@ocjtech.us>
+Date: Fri, 13 Nov 2026 12:57:05 -0600
+Subject: [PATCH 4/4] font: list the face load errors that mean no font
+
+Name the errors that mean the face has nothing we can open or read:
+fontconfig's lookup errors (a match with no file or index), CoreText's
+FontHasNoFile and FontPathCantDecode, and FreeType's CannotOpenResource,
+UnknownFileFormat and InvalidFileFormat. Every other error is returned.
+
+The switch is over anyerror because getFace's error set depends on the
+font backend, and a prong naming an error outside the set does not
+compile.
+---
+ src/font/SharedGrid.zig | 46 +++++++++++++++++++++++++++--------------
+ 1 file changed, 31 insertions(+), 15 deletions(-)
+
+diff --git a/src/font/SharedGrid.zig b/src/font/SharedGrid.zig
+index 0f300124c17..4a69ecfaeb9 100644
+--- a/src/font/SharedGrid.zig
++++ b/src/font/SharedGrid.zig
+@@ -189,21 +189,37 @@ pub fn getIndex(
+         // because getFace doesn't work with special fonts.
+         if (idx.special() != null) break :preload;
+ 
+-        // Load the face in case its deferred. If it cannot be loaded now
+-        // it never will be, so treat the codepoint as having no font and
+-        // cache that. Returning the error would make the caller drop
+-        // everything around this codepoint (the renderer clears the whole
+-        // row) and retry the same failing load on every frame. Running out
+-        // of memory is the exception: that may pass, so it is returned and
+-        // the errdefer above forgets this lookup.
+-        _ = self.resolver.collection.getFace(idx) catch |err| {
+-            if (err == error.OutOfMemory) return error.OutOfMemory;
+-            log.warn(
+-                "unable to load face for codepoint={X} err={}",
+-                .{ cp, err },
+-            );
+-            gop.value_ptr.* = null;
+-            return null;
++        // Load the face in case its deferred. The errors listed below
++        // mean the face has no file we can open or read, so it never will
++        // load: treat the codepoint as having no font and cache that.
++        // Returning the error would make the caller drop everything around
++        // this codepoint (the renderer clears the whole row) and retry the
++        // same failing load on every frame. Anything else, running out of
++        // memory included, is returned and the errdefer above forgets this
++        // lookup.
++        //
++        // The switch is over anyerror because the error set depends on the
++        // font backend: the fontconfig errors exist only with fontconfig,
++        // FontHasNoFile and FontPathCantDecode only with CoreText, and a
++        // prong naming an error outside the set does not compile.
++        _ = self.resolver.collection.getFace(idx) catch |err| switch (@as(anyerror, err)) {
++            error.FontconfigNoMatch,
++            error.FontconfigTypeMismatch,
++            error.FontconfigNoId,
++            error.FontHasNoFile,
++            error.FontPathCantDecode,
++            error.CannotOpenResource,
++            error.UnknownFileFormat,
++            error.InvalidFileFormat,
++            => {
++                log.warn(
++                    "unable to load face for codepoint={X} err={}",
++                    .{ cp, err },
++                );
++                gop.value_ptr.* = null;
++                return null;
++            },
++            else => return err,
+         };
+     }
+ 

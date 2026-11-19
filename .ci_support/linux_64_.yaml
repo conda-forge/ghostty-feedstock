@@ -26,6 +26,8 @@ fontconfig:
 - '2'
 freetype:
 - '2'
+gettext:
+- '0.25'
 gst_plugins_base:
 - '1.28'
 gstreamer:
