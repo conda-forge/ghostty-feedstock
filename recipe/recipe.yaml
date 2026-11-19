@@ -14,9 +14,11 @@ source:
     - patches/build-glibc-version.patch
     # Keep the existing headless-macOS icon compiler workaround.
     - patches/drop-iconcomposer-icon.patch
+    # Prevent a failed fallback font load from blanking the entire row.
+    - patches/font-fallback.patch
 
 build:
-  number: 1
+  number: 2
   dynamic_linking:
     # On osx we ship a self-contained .app bundle with Sparkle.framework
     # inside Contents/Frameworks/. xcodebuild emits the standard
